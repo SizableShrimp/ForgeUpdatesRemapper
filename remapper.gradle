@@ -1,0 +1,106 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '5.1.+', changing: true
+        classpath 'net.minecraftforge:srgutils:0.4.11'
+        classpath 'commons-io:commons-io:2.8.0'
+    }
+}
+
+repositories {
+    maven { url = 'https://maven.minecraftforge.net' }
+    mavenCentral()
+}
+
+import java.net.URL
+import java.nio.file.Files
+import java.util.Arrays
+import java.util.HashMap
+import java.util.HashSet
+import net.minecraftforge.gradle.common.tasks.ApplyRangeMap
+import net.minecraftforge.gradle.common.tasks.ExtractExistingFiles
+import net.minecraftforge.gradle.common.tasks.ExtractRangeMap
+import net.minecraftforge.srgutils.IMappingFile
+import org.apache.commons.io.FileUtils
+
+def updateSrgs = findProperty('UPDATE_SRGS')?.split(';')
+def isReversed = Boolean.parseBoolean(findProperty('REVERSED'))
+
+if (updateSrgs != null) {
+    afterEvaluate { project ->
+        def javaCompile = project.tasks.getByName('compileJava') as JavaCompile
+        def sourceSets = project.sourceSets
+        Set<File> srcDirs = new HashSet<>()
+        (project.findProperty('UPDATE_SOURCESETS') ?: 'main').toString().split(';').each {
+            srcDirs.addAll(sourceSets.getByName(it).java.srcDirs)
+        }
+
+        if (srcDirs.empty)
+            throw new RuntimeException("No java source directories found to update!")
+
+        task extractRangeMap(type: ExtractRangeMap) {
+            sources.from srcDirs
+            dependencies.from javaCompile.getClasspath()
+        }
+
+        task downloadSrgFiles(type: DownloadSrgFiles) {
+            input = Arrays.asList(updateSrgs)
+            reversed = isReversed
+        }
+
+        task applyRangeMap(type: ApplyRangeMap) {
+            rangeMap = tasks.extractRangeMap.output
+            srgFiles.from tasks.downloadSrgFiles.output.asFileTree
+            sources.from srcDirs
+        }
+
+        task extractMappedNew(type: ExtractExistingFiles) {
+            archive = tasks.applyRangeMap.output
+            targets.from srcDirs
+        }
+
+        task updateEverything {
+            dependsOn tasks.extractMappedNew
+        }
+
+        defaultTasks 'updateEverything'
+    }
+}
+
+abstract class DownloadSrgFiles extends DefaultTask {
+    @Input abstract SetProperty<String> getInput()
+    @OutputDirectory abstract DirectoryProperty getOutput()
+    @Input @Optional abstract Property<Boolean> getReversed()
+
+    DownloadSrgFiles() {
+        output.convention(project.layout.buildDirectory.dir(name))
+
+        // URLs can change their contents over time
+        outputs.upToDateWhen { false }
+    }
+
+    @TaskAction
+    void doTask() {
+        def reversed = this.reversed.getOrElse(false)
+        def outputDir = this.output.get()
+        if (outputDir.asFile.exists())
+            FileUtils.deleteDirectory(outputDir.asFile)
+
+        def usedFilenames = new HashMap<String, Integer>()
+        for (String urlStr : this.input.get()) {
+            def url = new URL(urlStr)
+            def srg = IMappingFile.load(url.openConnection().inputStream)
+            def fileName = url.path.substring(url.path.lastIndexOf('/') + 1)
+            def dotIdx = fileName.lastIndexOf('.')
+            if (dotIdx != -1) {
+                fileName = fileName.substring(0, dotIdx)
+            }
+            def uniqueIdx = usedFilenames.compute(fileName, { k, v -> v == null ? 0 : v + 1 })
+            def outputSrgFile = outputDir.file(fileName + (uniqueIdx == 0 ? '' : uniqueIdx) + '.tsrg').asFile
+            srg.write(outputSrgFile.toPath(), IMappingFile.Format.TSRG2, reversed)
+        }
+    }
+}
