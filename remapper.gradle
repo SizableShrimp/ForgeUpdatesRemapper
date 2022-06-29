@@ -16,7 +16,6 @@ repositories {
 }
 
 import java.net.URL
-import java.nio.file.Files
 import java.util.Arrays
 import java.util.HashMap
 import java.util.HashSet
@@ -31,19 +30,21 @@ def isReversed = Boolean.parseBoolean(findProperty('REVERSED'))
 
 if (updateSrgs != null) {
     afterEvaluate { project ->
-        def javaCompile = project.tasks.getByName('compileJava') as JavaCompile
-        def sourceSets = project.sourceSets
-        Set<File> srcDirs = new HashSet<>()
+        def updateSourceSets = new HashSet<>()
         (project.findProperty('UPDATE_SOURCESETS') ?: 'main').toString().split(';').each {
-            srcDirs.addAll(sourceSets.getByName(it).java.srcDirs)
+            updateSourceSets.add(project.sourceSets.getByName(it))
+        }
+        Set<File> srcDirs = new HashSet<>()
+        updateSourceSets.each {
+            srcDirs.addAll(it.java.srcDirs)
         }
 
         if (srcDirs.empty)
             throw new RuntimeException("No java source directories found to update!")
 
-        task extractRangeMap(type: ExtractRangeMap) {
+        task extractRangeMapNew(type: ExtractRangeMap) {
             sources.from srcDirs
-            dependencies.from javaCompile.getClasspath()
+            dependencies.from updateSourceSets.collect { it.compileClasspath }
         }
 
         task downloadSrgFiles(type: DownloadSrgFiles) {
@@ -51,14 +52,14 @@ if (updateSrgs != null) {
             reversed = isReversed
         }
 
-        task applyRangeMap(type: ApplyRangeMap) {
-            rangeMap = tasks.extractRangeMap.output
+        task applyRangeMapNew(type: ApplyRangeMap) {
+            rangeMap = tasks.extractRangeMapNew.output
             srgFiles.from tasks.downloadSrgFiles.output.asFileTree
             sources.from srcDirs
         }
 
         task extractMappedNew(type: ExtractExistingFiles) {
-            archive = tasks.applyRangeMap.output
+            archive = tasks.applyRangeMapNew.output
             targets.from srcDirs
         }
 
