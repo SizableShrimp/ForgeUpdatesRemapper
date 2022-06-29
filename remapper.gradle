@@ -5,7 +5,7 @@ buildscript {
     }
     dependencies {
         classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '5.1.+', changing: true
-        classpath 'net.minecraftforge:srgutils:0.4.11'
+        classpath 'net.minecraftforge:srgutils:0.4.13'
         classpath 'commons-io:commons-io:2.8.0'
     }
 }
