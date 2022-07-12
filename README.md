@@ -1,6 +1,8 @@
 # Forge Updates Remapper
 **Forge Updates Remapper** is a tool which helps you remap your Forge mod using provided URLs pointing to SRG files.
 This tool can also be used in reverse.
+This tool only works with **Java source files**.
+Other JVM languages are not supported, and support is not planned.
 
 ## Note: You MUST run this BEFORE updating/changing anything
 For this script to work, your mod must compile as-is.
